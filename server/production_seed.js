@@ -12,38 +12,31 @@ function toObjects(result) {
 function seedProductionData(db) {
     console.log('🌱 Starting comprehensive production seed...');
 
+    const bcrypt = require('bcryptjs');
+    const hashedAdmin = bcrypt.hashSync('admin123', 10);
+    const hashedPass = bcrypt.hashSync('password123', 10);
+
     // 0. CREATE USERS IF MISSING
-    const userCount = db.exec("SELECT COUNT(*) as count FROM users")[0].values[0][0];
-    if (userCount === 0) {
-        console.log('👥 Creating default users...');
-        const bcrypt = require('bcryptjs');
-        const hashed = bcrypt.hashSync('admin123', 10);
-        const hashedEmp = bcrypt.hashSync('password123', 10);
+    // Ensure Admin
+    db.run("INSERT OR IGNORE INTO users (name, username, email, password, role, position, status) VALUES ('System Admin', 'admin', 'admin@burnoutguardian.com', ?, 'ADMIN', 'Director of People', 'active')", [hashedAdmin]);
 
-        // 1. Admin
-        db.run("INSERT INTO users (name, username, email, password, role, position, status) VALUES ('System Admin', 'admin', 'admin@burnoutguardian.com', ?, 'ADMIN', 'Director of People', 'active')", [hashed]);
+    // Ensure Manager
+    db.run("INSERT OR IGNORE INTO users (name, username, email, password, role, position, status) VALUES ('Sarah Manager', 'manager1', 'sarah@burnoutguardian.com', ?, 'MANAGER', 'Engineering Lead', 'active')", [hashedPass]);
 
-        // 2. Manager
-        db.run("INSERT INTO users (name, username, email, password, role, position, status) VALUES ('Sarah Manager', 'manager1', 'sarah@burnoutguardian.com', ?, 'MANAGER', 'Engineering Lead', 'active')", [hashedEmp]);
+    // Get Manager ID for employee linking
+    const mgrResult = toObjects(db.exec("SELECT id FROM users WHERE username = 'manager1'"));
+    const mgrId = mgrResult[0]?.id;
 
-        // Get Manager ID
-        const mgrIdObj = db.exec("SELECT id FROM users WHERE username = 'manager1'");
-        const mgrId = mgrIdObj[0].values[0][0];
-
-        // 3. Employee
-        db.run("INSERT INTO users (name, username, email, password, role, position, status, manager_id) VALUES ('Alex Developer', 'employee1', 'alex@burnoutguardian.com', ?, 'EMPLOYEE', 'Senior Dev', 'active', ?)", [hashedEmp, mgrId]);
-
-        console.log('✅ Default users created.');
+    // Ensure Employee
+    if (mgrId) {
+        db.run("INSERT OR IGNORE INTO users (name, username, email, password, role, position, status, manager_id) VALUES ('Alex Developer', 'employee1', 'alex@burnoutguardian.com', ?, 'EMPLOYEE', 'Senior Dev', 'active', ?)", [hashedPass, mgrId]);
     }
 
     // 1. Get IDs (Re-fetch to ensure we have them)
-    const users = db.exec("SELECT id, role, username FROM users WHERE username IN ('employee1', 'manager1')");
+    // Refetch map
+    const users = toObjects(db.exec("SELECT id, role, username FROM users WHERE username IN ('employee1', 'manager1')"));
     const userMap = {};
-    if (users[0] && users[0].values) {
-        users[0].values.forEach(row => {
-            userMap[row[2]] = row[0];
-        });
-    }
+    users.forEach(u => { userMap[u.username] = u.id; });
 
     const emp1Id = userMap['employee1'];
     const mgr1Id = userMap['manager1'];
@@ -54,7 +47,6 @@ function seedProductionData(db) {
     }
 
     // 2. Add fake tasks
-    // Check if tasks exist to avoid duplication
     const taskCount = db.exec("SELECT COUNT(*) as count FROM tasks")[0].values[0][0];
     if (taskCount === 0) {
         const fakeTasks = [
@@ -120,17 +112,20 @@ function seedProductionData(db) {
     // 6. Admin Tasks
     const adminCount = db.exec("SELECT COUNT(*) as count FROM admin_assigned_tasks")[0].values[0][0];
     if (adminCount === 0) {
-        const adminId = 1;
-        const adminTasks = [
-            { title: 'Quarterly Team Focus Review', deadline: '2026-03-01', priority: 'High', status: 'Assigned' },
-            { title: 'Mandatory Mental Health Audit', deadline: '2026-02-28', priority: 'Critical', status: 'Assigned' }
-        ];
-        adminTasks.forEach(t => {
-            db.run(`INSERT INTO admin_assigned_tasks (manager_id, assigned_by, title, deadline, priority, status) 
-                    VALUES (?, ?, ?, ?, ?, ?)`,
-                [mgr1Id, adminId, t.title, t.deadline, t.priority, t.status]);
-        });
-        console.log('✅ Admin tasks seeded.');
+        const adminResult = toObjects(db.exec("SELECT id FROM users WHERE role = 'ADMIN' LIMIT 1"));
+        const adminId = adminResult[0]?.id;
+        if (adminId) {
+            const adminTasks = [
+                { title: 'Quarterly Team Focus Review', deadline: '2026-03-01', priority: 'High', status: 'Assigned' },
+                { title: 'Mandatory Mental Health Audit', deadline: '2026-02-28', priority: 'Critical', status: 'Assigned' }
+            ];
+            adminTasks.forEach(t => {
+                db.run(`INSERT INTO admin_assigned_tasks (manager_id, assigned_by, title, deadline, priority, status) 
+                        VALUES (?, ?, ?, ?, ?, ?)`,
+                    [mgr1Id, adminId, t.title, t.deadline, t.priority, t.status]);
+            });
+            console.log('✅ Admin tasks seeded.');
+        }
     }
 
     // 7. Cognitive Metrics (The most critical part for graphs!)
