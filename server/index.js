@@ -28,6 +28,10 @@ app.use('/api/employee', authMiddleware, roleMiddleware('EMPLOYEE'), employeeRou
 app.use('/api/manager', authMiddleware, roleMiddleware('MANAGER'), managerRoutes);
 app.use('/api/admin', authMiddleware, roleMiddleware('ADMIN'), adminRoutes);
 
+app.get('/', (req, res) => {
+    res.send('🛡️ BurnoutGuardian API is active. Access health at /api/health');
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
